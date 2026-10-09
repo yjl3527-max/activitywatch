@@ -127,30 +127,47 @@ aw_server_a = build_analysis(
 aw_watcher_afk_a = build_analysis(
     "aw_watcher_afk",
     awa_location,
-    hiddenimports=[
-        "Xlib.keysymdef.miscellany",
-        "Xlib.keysymdef.latin1",
-        "Xlib.keysymdef.latin2",
-        "Xlib.keysymdef.latin3",
-        "Xlib.keysymdef.latin4",
-        "Xlib.keysymdef.greek",
-        "Xlib.support.unix_connect",
-        "Xlib.ext.shape",
-        "Xlib.ext.xinerama",
-        "Xlib.ext.composite",
-        "Xlib.ext.randr",
-        "Xlib.ext.xfixes",
-        "Xlib.ext.security",
-        "Xlib.ext.xinput",
-        "pynput.keyboard._xorg",
-        "pynput.mouse._xorg",
+    hiddenimports=(
+        [
+            "Xlib.keysymdef.miscellany",
+            "Xlib.keysymdef.latin1",
+            "Xlib.keysymdef.latin2",
+            "Xlib.keysymdef.latin3",
+            "Xlib.keysymdef.latin4",
+            "Xlib.keysymdef.greek",
+            "Xlib.support.unix_connect",
+            "Xlib.ext.shape",
+            "Xlib.ext.xinerama",
+            "Xlib.ext.composite",
+            "Xlib.ext.randr",
+            "Xlib.ext.xfixes",
+            "Xlib.ext.security",
+            "Xlib.ext.xinput",
+        ]
+        if platform.system() == "Linux"
+        else []
+    )
+    + [
         "pynput.keyboard._win32",
         "pynput.mouse._win32",
         "pynput.keyboard._darwin",
         "pynput.mouse._darwin",
     ],
 )
-aw_watcher_input_a = build_analysis("aw_watcher_input", awi_location)
+# aw-watcher-input is an optional submodule.  Some macOS source checkouts do
+# not initialize it (and the native app does not require it), so a missing
+# checkout must not make the whole ActivityWatch bundle unbuildable.
+if any(
+    (awi_location / candidate).exists()
+    for candidate in (
+        "aw_watcher_input/__main__.py",
+        "src/aw_watcher_input/__main__.py",
+    )
+):
+    aw_watcher_input_a = build_analysis("aw_watcher_input", awi_location)
+else:
+    aw_watcher_input_a = None
+    print("Skipping aw-watcher-input packaging (submodule not initialized).")
 aw_watcher_window_a = build_analysis(
     "aw_watcher_window",
     aww_location,
@@ -189,8 +206,9 @@ merge_args = [
     (aw_qt_a, "aw-qt", "aw-qt"),
     (aw_watcher_afk_a, "aw-watcher-afk", "aw-watcher-afk"),
     (aw_watcher_window_a, "aw-watcher-window", "aw-watcher-window"),
-    (aw_watcher_input_a, "aw-watcher-input", "aw-watcher-input"),
 ]
+if aw_watcher_input_a is not None:
+    merge_args.append((aw_watcher_input_a, "aw-watcher-input", "aw-watcher-input"))
 if aw_notify_a is not None:
     merge_args.append((aw_notify_a, "aw-notify", "aw-notify"))
 
@@ -214,8 +232,12 @@ awq_coll = build_collect(
     entitlements=app_entitlements_file,
 )
 
-# aw-watcher-input
-awi_coll = build_collect(aw_watcher_input_a, "aw-watcher-input")
+# aw-watcher-input (optional)
+awi_coll = (
+    build_collect(aw_watcher_input_a, "aw-watcher-input")
+    if aw_watcher_input_a is not None
+    else None
+)
 
 # aw-notify (only if Python package exists)
 aw_notify_coll = build_collect(aw_notify_a, "aw-notify") if aw_notify_a is not None else None
@@ -226,8 +248,9 @@ if platform.system() == "Darwin":
         aws_coll,
         aww_coll,
         awa_coll,
-        awi_coll,
     ]
+    if awi_coll is not None:
+        bundle_args.append(awi_coll)
     if aw_notify_coll is not None:
         bundle_args.append(aw_notify_coll)
     
@@ -241,6 +264,8 @@ if platform.system() == "Darwin":
             "NSPrincipalClass": "NSApplication",
             "CFBundleExecutable": "MacOS/aw-qt",
             "CFBundleIconFile": "logo.icns",
+            "CFBundleDisplayName": "时迹",
+            "CFBundleName": "时迹",
             "NSAppleEventsUsageDescription": "Please grant access to use Apple Events",
             # This could be set to a more specific version string (including the commit id, for example)
             "CFBundleVersion": current_release.lstrip("v"),
